@@ -195,7 +195,7 @@ jobs:
       run: |
         echo "Current branch: ${{ github.ref }}"
         echo "Is feature branch: ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
-		
+        
     - name: Auto Merge to Dev
       if: steps.verify-merge.outputs.ready == 'true'
       uses: actions/github-script@v6

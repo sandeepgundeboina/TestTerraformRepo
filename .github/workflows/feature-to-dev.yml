@@ -58,7 +58,7 @@ jobs:
           -var-file=../environments/dev/terraform.tfvars \
           -out=tfplan
       working-directory: ./terraform
-      continue-on-error: false
+      #continue-on-error: false
 
     - name: Create or Update PR to Dev
       if: github.event_name == 'push' && contains(github.ref, 'feature/')

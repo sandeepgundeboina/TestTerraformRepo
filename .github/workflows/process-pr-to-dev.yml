@@ -65,8 +65,8 @@ jobs:
         AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
       with:
         script: |
-          const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
-          
+																	   
+		  
           const output = `## Terraform CI/CD Validation Results ✅
 
           ### Validation Checks:
@@ -88,7 +88,7 @@ jobs:
           ---
           *Pushed by: @${{ github.actor }}*`;
           
-          const comments = await octokit.rest.issues.listComments({
+          const comments = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
@@ -99,14 +99,14 @@ jobs:
           );
           
           if (existingComment) {
-            await octokit.rest.issues.updateComment({
+            await github.rest.issues.updateComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               comment_id: existingComment.id,
               body: output
             });
           } else {
-            await octokit.rest.issues.createComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
@@ -128,7 +128,7 @@ jobs:
       run: |
         echo "Current branch: ${{ github.ref }}"
         echo "Is feature branch: ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
-        
+		
   auto-merge:
     if: github.event_name == 'pull_request_review' && github.event.review.state == 'approved'
     name: Auto Merge to Dev
@@ -148,18 +148,18 @@ jobs:
       id: verify-merge
       uses: actions/github-script@v6
       env:
-        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}		  												   
       with:
         script: |
-          const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
-          
-          const { data: pr } = await octokit.rest.pulls.get({
+          // Use the built-in github object directly
+		  
+          const { data: pr } = await github.rest.pulls.get({
             owner: context.repo.owner,
             repo: context.repo.repo,
             pull_number: context.issue.number,
           });
           
-          const { data: reviews } = await octokit.rest.pulls.listReviews({
+          const { data: reviews } = await github.rest.pulls.listReviews({
             owner: context.repo.owner,
             repo: context.repo.repo,
             pull_number: context.issue.number,
@@ -200,19 +200,21 @@ jobs:
       run: |
         echo "Current branch: ${{ github.ref }}"
         echo "Is feature branch: ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
-        
+		
     - name: Auto Merge to Dev
       if: steps.verify-merge.outputs.ready == 'true'
       uses: actions/github-script@v6
       env:
-        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}		  												   
       with:
         script: |
-          const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
-          
+																	   
+		  
           try {
             console.log('🚀 Starting auto-merge to dev...');
-            const result = await octokit.rest.pulls.merge({
+            
+            // Use the built-in github object directly
+            const result = await github.rest.pulls.merge({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.issue.number,
@@ -221,7 +223,7 @@ jobs:
             
             console.log('✅ PR merged successfully to dev:', result.data.merged);
             
-            await octokit.rest.issues.createComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
@@ -231,7 +233,7 @@ jobs:
           } catch (error) {
             console.error('❌ Merge failed:', error.message);
             
-            await octokit.rest.issues.createComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,

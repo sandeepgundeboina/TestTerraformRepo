@@ -1,6 +1,6 @@
 resource "local_file" "config" {
   filename = "${path.module}/output/${var.environment}-config.txt"
-  content = <<-EOT
+  content  = <<-EOT
     Application: AZFUNCHOSTING
     Environment: ${var.environment}
     Branch: ${var.branch_name}

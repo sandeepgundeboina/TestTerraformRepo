@@ -23,18 +23,14 @@ jobs:
 
     - name: Create PR to Dev
       uses: actions/github-script@v6
-      env:
-        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
       with:
         script: |
           try {
             const branchName = context.ref.replace('refs/heads/', '');
             console.log('Creating PR for branch:', branchName);
             
-            const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
-            
-            // Check if PR already exists
-            const { data: existingPRs } = await octokit.rest.pulls.list({
+            // Check if PR already exists - use github object directly
+            const { data: existingPRs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
               head: branchName,
@@ -45,8 +41,8 @@ jobs:
             console.log('Found existing PRs:', existingPRs.length);
             
             if (existingPRs.length === 0) {
-              // Create new PR
-              const pr = await octokit.rest.pulls.create({
+              // Create new PR - use github object directly
+              const pr = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: `Auto PR: ${branchName} to dev`,

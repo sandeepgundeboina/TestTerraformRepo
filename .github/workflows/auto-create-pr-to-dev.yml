@@ -1,0 +1,78 @@
+name: Auto Create PR to Dev
+
+on:
+  push:
+    branches: [feature/**]
+
+env:
+  TF_VERSION: '1.5.0'
+
+jobs:
+  create-pr:
+    name: Create PR to Dev
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.AUTO_PR_TOKEN }}
+
+    - name: Create PR to Dev
+      uses: actions/github-script@v6
+      env:
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+      with:
+        script: |
+          try {
+            const branchName = context.ref.replace('refs/heads/', '');
+            console.log('Creating PR for branch:', branchName);
+            
+            const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
+            
+            // Check if PR already exists
+            const { data: existingPRs } = await octokit.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: branchName,
+              base: 'dev',
+              state: 'open'
+            });
+            
+            console.log('Found existing PRs:', existingPRs.length);
+            
+            if (existingPRs.length === 0) {
+              // Create new PR
+              const pr = await octokit.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Auto PR: ${branchName} to dev`,
+                head: branchName,
+                base: 'dev',
+                body: `## Automated Pull Request
+                
+This PR was automatically created from **${branchName}** to **dev**.
+
+### ✅ Terraform validation will run automatically
+- Format check
+- Syntax validation  
+- Execution plan
+
+### 📋 Next Steps
+1. Wait for Terraform validation to complete
+2. Review the Terraform plan
+3. Approve the PR if everything looks good
+4. PR will auto-merge after approval`
+              });
+              console.log('✅ Created new PR:', pr.data.number);
+              console.log('PR URL:', pr.data.html_url);
+              
+            } else {
+              console.log('ℹ️ PR already exists:', existingPRs[0].number);
+            }
+          } catch (error) {
+            console.log('❌ PR creation failed:', error.message);
+          }

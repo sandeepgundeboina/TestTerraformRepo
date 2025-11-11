@@ -1,0 +1,240 @@
+name: Process PR to Dev
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
+
+env:
+  TF_VERSION: '1.5.0'
+
+jobs:
+  terraform-validation:
+    if: github.event_name == 'pull_request'
+    name: Terraform Validation and Plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Create output directory
+      run: mkdir -p terraform/output
+
+    - name: Terraform Format Check
+      id: fmt
+      run: terraform fmt -check -recursive
+      working-directory: ./terraform
+
+    - name: Terraform Init
+      id: init
+      run: terraform init
+      working-directory: ./terraform
+
+    - name: Terraform Validate
+      id: validate
+      run: terraform validate
+      working-directory: ./terraform
+
+    - name: Terraform Plan
+      id: plan
+      run: |
+        terraform plan -no-color -input=false \
+          -var="environment=dev" \
+          -var="branch_name=${{ github.head_ref }}" \
+          -var="last_updated_by=${{ github.actor }}" \
+          -var-file=../environments/dev/terraform.tfvars
+      working-directory: ./terraform
+
+    - name: Update PR with Plan Output
+      uses: actions/github-script@v6
+      env:
+        PLAN: "${{ steps.plan.outputs.stdout }}"
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+      with:
+        script: |
+          const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
+          
+          const output = `## Terraform CI/CD Validation Results ✅
+
+          ### Validation Checks:
+          - **Format Check**: \`${{ steps.fmt.outcome }}\`
+          - **Initialization**: \`${{ steps.init.outcome }}\`
+          - **Syntax Validation**: \`${{ steps.validate.outcome }}\`
+          - **Execution Plan**: \`${{ steps.plan.outcome }}\`
+
+          ### Terraform Plan Output:
+          <details>
+          <summary>📋 Click to view detailed plan</summary>
+          
+          \`\`\`terraform
+          ${process.env.PLAN}
+          \`\`\`
+          
+          </details>
+
+          ---
+          *Pushed by: @${{ github.actor }}*`;
+          
+          const comments = await octokit.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const existingComment = comments.data.find(comment => 
+            comment.body.includes('Terraform CI/CD Validation Results')
+          );
+          
+          if (existingComment) {
+            await octokit.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: output
+            });
+          } else {
+            await octokit.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output
+            });
+          }
+    - name: Debug Event Information
+      run: |
+        echo "=== DEBUG INFORMATION ==="
+        echo "Event Name: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Head Ref: ${{ github.head_ref }}"
+        echo "Base Ref: ${{ github.base_ref }}"
+        echo "Contains feature/: ${{ contains(github.ref, 'feature/') }}"
+        echo "Repository: ${{ github.repository }}"
+        echo "Actor: ${{ github.actor }}"
+        
+    - name: Debug Branch Name
+      run: |
+        echo "Current branch: ${{ github.ref }}"
+        echo "Is feature branch: ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
+        
+  auto-merge:
+    if: github.event_name == 'pull_request_review' && github.event.review.state == 'approved'
+    name: Auto Merge to Dev
+    runs-on: ubuntu-latest
+    needs: [terraform-validation]
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.AUTO_PR_TOKEN }}
+
+    - name: Verify PR is mergeable
+      id: verify-merge
+      uses: actions/github-script@v6
+      env:
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+      with:
+        script: |
+          const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
+          
+          const { data: pr } = await octokit.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number,
+          });
+          
+          const { data: reviews } = await octokit.rest.pulls.listReviews({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number,
+          });
+          
+          const approvals = reviews.filter(review => 
+            review.state === 'APPROVED'
+          );
+          
+          console.log('PR Merge Check:', {
+            mergeable: pr.mergeable,
+            state: pr.state,
+            merged: pr.merged,
+            approvals: approvals.length
+          });
+          
+          if (pr.mergeable && pr.state === 'open' && !pr.merged && approvals.length >= 1) {
+            console.log('✅ PR is ready for auto-merge');
+            core.setOutput('ready', 'true');
+          } else {
+            console.log('❌ PR not ready for auto-merge');
+            core.setOutput('ready', 'false');
+          }
+
+    - name: Debug Event Information
+      run: |
+        echo "=== DEBUG INFORMATION ==="
+        echo "Event Name: ${{ github.event_name }}"
+        echo "Verify merge outputs ready: ${{ steps.verify-merge.outputs.ready }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Head Ref: ${{ github.head_ref }}"
+        echo "Base Ref: ${{ github.base_ref }}"
+        echo "Contains feature/: ${{ contains(github.ref, 'feature/') }}"
+        echo "Repository: ${{ github.repository }}"
+        echo "Actor: ${{ github.actor }}"
+        
+    - name: Debug Branch Name
+      run: |
+        echo "Current branch: ${{ github.ref }}"
+        echo "Is feature branch: ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
+        
+    - name: Auto Merge to Dev
+      if: steps.verify-merge.outputs.ready == 'true'
+      uses: actions/github-script@v6
+      env:
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+      with:
+        script: |
+          const octokit = github.getOctokit(process.env.AUTO_PR_TOKEN);
+          
+          try {
+            console.log('🚀 Starting auto-merge to dev...');
+            const result = await octokit.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              merge_method: 'merge'
+            });
+            
+            console.log('✅ PR merged successfully to dev:', result.data.merged);
+            
+            await octokit.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '✅ PR automatically merged to dev after approval! 🚀'
+            });
+            
+          } catch (error) {
+            console.error('❌ Merge failed:', error.message);
+            
+            await octokit.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ Auto-merge failed: ${error.message}`
+            });
+          }

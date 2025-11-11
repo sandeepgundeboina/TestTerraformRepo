@@ -177,15 +177,19 @@ jobs:
             review.state === 'APPROVED'
           );
           
+          console.log(`PR Status:`, {
+            mergeable: pr.mergeable,
+            approvalsCount: approvals.length,
+            prState: pr.state,
+            requiredApprovals: 1
+          });
+          
+          // STRICT CHECK: Must have at least 1 approval
           if (pr.mergeable && approvals.length >= 1 && pr.state === 'open') {
             console.log(`✅ PR approved and mergeable with ${approvals.length} approval(s)`);
             return true;
           } else {
-            console.log('❌ PR not ready for merge:', {
-              mergeable: pr.mergeable,
-              approvals: approvals.length,
-              state: pr.state
-            });
+            console.log(`❌ PR not ready for merge. Need 1 approval, got ${approvals.length}`);
             return false;
           }
 
@@ -202,6 +206,25 @@ jobs:
               merge_method: 'merge'
             });
             console.log('✅ PR merged successfully to dev');
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `✅ PR automatically merged by CI/CD pipeline with approval`
+            });
           } catch (error) {
             console.log('❌ Merge failed:', error.message);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ Auto-merge failed: ${error.message}`
+            });
           }
+
+    - name: Skip Merge - Waiting for Approval
+      if: steps.check-merge.outputs.result == 'false'
+      run: |
+        echo "⏳ PR is mergeable but waiting for required approval(s)"
+        echo "Current PR needs at least 1 approval before auto-merge"

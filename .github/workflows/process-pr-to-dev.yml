@@ -6,18 +6,13 @@ on:
     types: [opened, synchronize, reopened]
   pull_request_review:
     types: [submitted]
-  workflow_dispatch:  # ← THIS IS THE KEY - allows manual trigger
-    inputs:
-      pr_number:
-        description: 'PR Number to process'
-        required: true
-        type: string
 
 env:
   TF_VERSION: '1.5.0'
 
 jobs:
   terraform-validation:
+    if: github.event_name == 'pull_request'
     name: Terraform Validation and Plan
     runs-on: ubuntu-latest
     permissions:
@@ -25,16 +20,6 @@ jobs:
       pull-requests: write
     
     steps:
-    - name: Determine PR Number
-      id: pr-number
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "pr_number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
-        else
-          echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-        fi
-        echo "Using PR number: $(echo ${{ github.event.inputs.pr_number || github.event.pull_request.number }})"
-
     - name: Checkout code
       uses: actions/checkout@v4
       with:
@@ -77,13 +62,10 @@ jobs:
       uses: actions/github-script@v6
       env:
         PLAN: "${{ steps.plan.outputs.stdout }}"
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
       with:
         script: |
-          const prNumber = '${{ steps.pr-number.outputs.pr_number }}' || context.issue.number;
-          console.log('Updating PR:', prNumber);
-          
           const output = `## Terraform CI/CD Validation Results ✅
-
           ### Validation Checks:
           - **Format Check**: \`${{ steps.fmt.outcome }}\`
           - **Initialization**: \`${{ steps.init.outcome }}\`
@@ -106,7 +88,7 @@ jobs:
           const comments = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            issue_number: prNumber,
+            issue_number: context.issue.number,
           });
           
           const existingComment = comments.data.find(comment => 
@@ -124,11 +106,25 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: prNumber,
+              issue_number: context.issue.number,
               body: output
             });
           }
-
+    - name: Debug Event Information
+      run: |
+        echo "=== DEBUG INFORMATION ==="
+        echo "Event Name: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Head Ref: ${{ github.head_ref }}"
+        echo "Base Ref: ${{ github.base_ref }}"
+        echo "Contains feature/: ${{ contains(github.ref, 'feature/') }}"
+        echo "Repository: ${{ github.repository }}"
+        echo "Actor: ${{ github.actor }}"
+        
+    - name: Debug Branch Name
+      run: |
+        echo "Current branch: ${{ github.ref }}"
+        echo "Is feature branch: ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
   auto-merge:
     if: github.event_name == 'pull_request_review' && github.event.review.state == 'approved'
     name: Auto Merge to Dev
@@ -147,9 +143,12 @@ jobs:
     - name: Verify PR is mergeable
       id: verify-merge
       uses: actions/github-script@v6
+      env:
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}		  												   
       with:
         script: |
-          const { data: pr } = await github.rest.pulls.get({
+          // Use the built-in github object directly
+            const { data: pr } = await github.rest.pulls.get({
             owner: context.repo.owner,
             repo: context.repo.repo,
             pull_number: context.issue.number,
@@ -180,14 +179,34 @@ jobs:
             core.setOutput('ready', 'false');
           }
 
+    - name: Debug Event Information
+      run: |
+        echo "=== DEBUG INFORMATION ==="
+        echo "Event Name: ${{ github.event_name }}"
+        echo "Verify merge outputs ready: ${{ steps.verify-merge.outputs.ready }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Head Ref: ${{ github.head_ref }}"
+        echo "Base Ref: ${{ github.base_ref }}"
+        echo "Contains feature/: ${{ contains(github.ref, 'feature/') }}"
+        echo "Repository: ${{ github.repository }}"
+        echo "Actor: ${{ github.actor }}"
+        
+    - name: Debug Branch Name
+      run: |
+        echo "Current branch: ${{ github.ref }}"
+        echo "Is feature branch: ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
+        
     - name: Auto Merge to Dev
       if: steps.verify-merge.outputs.ready == 'true'
       uses: actions/github-script@v6
+      env:
+        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}		  												   
       with:
         script: |
-          try {
+         try {
             console.log('🚀 Starting auto-merge to dev...');
             
+            // Use the built-in github object directly
             const result = await github.rest.pulls.merge({
               owner: context.repo.owner,
               repo: context.repo.repo,

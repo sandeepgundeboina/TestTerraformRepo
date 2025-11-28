@@ -62,7 +62,7 @@ jobs:
       uses: actions/github-script@v6
       env:
         PLAN: "${{ steps.plan.outputs.stdout }}"
-        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+        AUTO_PR_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         script: |
           const output = `## Terraform CI/CD Validation Results ✅
@@ -138,13 +138,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.AUTO_PR_TOKEN }}
+        token: ${{ secrets.PAT_TOKEN }}
 
     - name: Verify PR is mergeable
       id: verify-merge
       uses: actions/github-script@v6
       env:
-        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}		  												   
+        AUTO_PR_TOKEN: ${{ secrets.PAT_TOKEN }}		  												   
       with:
         script: |
           // Use the built-in github object directly
@@ -200,7 +200,7 @@ jobs:
       if: steps.verify-merge.outputs.ready == 'true'
       uses: actions/github-script@v6
       env:
-        AUTO_PR_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}		  												   
+        AUTO_PR_TOKEN: ${{ secrets.PAT_TOKEN }}		  												   
       with:
         script: |
          try {
